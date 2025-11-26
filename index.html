@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Voice Analyzer</title>
+  <style>
+    body { font-family: Arial; padding: 20px; background: #111; color: white; }
+    #start { padding: 10px 20px; background: #0f0; border: none; cursor: pointer; }
+    .box { margin-top: 20px; background: #222; padding: 15px; border-radius: 8px; }
+    pre { background: #000; padding: 10px; }
+  </style>
+</head>
+<body>
+
+<h2>🎧 AI Voice Analyzer — Live</h2>
+
+<button id="start">Start Recording</button>
+
+<div class="box">
+  <h3>Basic Metrics</h3>
+  <p><b>Volume:</b> <span id="volume">0</span></p>
+  <p><b>Pitch (Hz):</b> <span id="pitch">0</span></p>
+</div>
+
+<div class="box">
+  <h3>Frequency Spectrum</h3>
+  <pre id="freq"></pre>
+</div>
+
+<div class="box">
+  <h3>Meyda Features</h3>
+  <pre id="meyda"></pre>
+</div>
+
+<script src="https://unpkg.com/meyda/dist/web/meyda.min.js"></script>
+<script src="main.js"></script>
+
+</body>
+</html>
