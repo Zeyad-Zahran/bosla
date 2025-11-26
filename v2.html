@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Advanced Voice Analyzer</title>
+  <style>
+    body { background:#0d0d0d; color:#fff; font-family:Arial; padding:20px; }
+    h1 { text-align:center; }
+    .controls { display:flex; gap:15px; justify-content:center; margin-bottom:20px; }
+    .controls button, .controls input {
+      padding:10px 15px; border:none; border-radius:6px; cursor:pointer;
+      background:#1f1f1f; color:#fff;
+    }
+    #charts { display:grid; grid-template-columns:repeat(2, 1fr); gap:20px; }
+    canvas { background:#111; border-radius:10px; padding:10px; }
+    pre { background:#111; padding:15px; border-radius:6px; }
+  </style>
+</head>
+<body>
+
+<h1>Bosla V2</h1>
+
+<div class="controls">
+  <button id="recordBtn">🎤 Record Clip (5 seconds)</button>
+  <input type="file" id="upload" accept="audio/*" />
+</div>
+
+<h2>📊 Analysis Dashboard</h2>
+<div id="charts">
+  <canvas id="volumeChart" height="200"></canvas>
+  <canvas id="pitchChart" height="200"></canvas>
+  <canvas id="speedChart" height="200"></canvas>
+  <canvas id="freqChart" height="200"></canvas>
+</div>
+
+<h2>📄 Detailed Report</h2>
+<pre id="report">Upload or record audio to generate a report...</pre>
+
+<script src="https://unpkg.com/meyda/dist/web/meyda.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// ========================= GLOBAL VARS =============================
+let audioCtx;
+let reportEl = document.getElementById("report");
+let volumeData = [], pitchData = [], speedData = [], freqData = [];
+
+// ========================= RECORD AUDIO ============================
+async function recordClip() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const recorder = new MediaRecorder(stream);
+  let chunks = [];
+
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: "audio/webm" });
+    analyzeBlob(blob);
+  };
+
+  recorder.start();
+  setTimeout(() => recorder.stop(), 5000);
+}
+
+// ========================== UPLOAD FILE =============================
+document.getElementById("upload").onchange = function(e) {
+  const file = e.target.files[0];
+  analyzeBlob(file);
+};
+
+document.getElementById("recordBtn").onclick = recordClip;
+
+// ========================= ANALYZE AUDIO ============================
+async function analyzeBlob(blob) {
+  resetCharts();
+  reportEl.textContent = "Analyzing audio...";
+
+  const arrayBuffer = await blob.arrayBuffer();
+  audioCtx = new AudioContext();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+  processAudio(audioBuffer);
+}
+
+// ======================== PROCESS AUDIO ============================
+function processAudio(buffer) {
+  const raw = buffer.getChannelData(0);
+
+  let chunkSize = 2048;
+  for (let i = 0; i < raw.length; i += chunkSize) {
+    let slice = raw.slice(i, i + chunkSize);
+
+    // Volume
+    let vol = Math.sqrt(slice.reduce((s, n) => s + n*n, 0) / slice.length);
+    volumeData.push(vol);
+
+    // Pitch (basic autocorrelation)
+    let pitch = detectPitch(slice, audioCtx.sampleRate);
+    pitchData.push(pitch);
+
+    // Speed estimation: zero‑crossing rate ~ tempo
+    let zcr = calcZCR(slice);
+    speedData.push(zcr);
+
+    // Frequency snapshot
+    freqData.push(vol * 1000);
+  }
+
+  updateCharts();
+  generateReport();
+}
+
+// ========================== PITCH DETECTION =========================
+function detectPitch(signal, sampleRate) {
+  let bestLag = -1, bestCorr = 0;
+  for (let lag = 20; lag < 500; lag++) {
+    let corr = 0;
+    for (let i = 0; i < signal.length - lag; i++)
+      corr += signal[i] * signal[i + lag];
+
+    if (corr > bestCorr) {
+      bestCorr = corr;
+      bestLag = lag;
+    }
+  }
+  return sampleRate / bestLag;
+}
+
+// ============================ ZCR ================================
+function calcZCR(arr) {
+  let count = 0;
+  for (let i = 1; i < arr.length; i++)
+    if ((arr[i-1] > 0 && arr[i] < 0) || (arr[i-1] < 0 && arr[i] > 0)) count++;
+  return count;
+}
+
+// ======================== CHARTS SETUP =============================
+let volChart, pitchChart, speedChart, freqChart;
+function resetCharts() {
+  volumeData = []; pitchData = []; speedData = []; freqData = [];
+  if (volChart) volChart.destroy();
+  if (pitchChart) pitchChart.destroy();
+  if (speedChart) speedChart.destroy();
+  if (freqChart) freqChart.destroy();
+}
+
+function updateCharts() {
+  volChart = new Chart(volumeChart, { type:'line', data:{ labels: volumeData.map((_,i)=>i), datasets:[{data:volumeData}] }});
+  pitchChart = new Chart(pitchChart, { type:'line', data:{ labels: pitchData.map((_,i)=>i), datasets:[{data:pitchData}] }});
+  speedChart = new Chart(speedChart, { type:'line', data:{ labels: speedData.map((_,i)=>i), datasets:[{data:speedData}] }});
+  freqChart = new Chart(freqChart, { type:'line', data:{ labels: freqData.map((_,i)=>i), datasets:[{data:freqData}] }});
+}
+
+// ========================= REPORT ================================
+function generateReport() {
+  let avgVol = avg(volumeData).toFixed(4);
+  let avgPitch = avg(pitchData).toFixed(2);
+  let avgSpeed = avg(speedData).toFixed(2);
+
+  reportEl.textContent = `VOICE REPORT\n\n`+
+  `• Average Volume: ${avgVol}\n`+
+  `• Average Pitch: ${avgPitch} Hz\n`+
+  `• Estimated Speed (ZCR): ${avgSpeed}\n\n`+
+  `Interpretation:\n`+
+  `- High pitch indicates excitement, tension, or a female voice.\n`+
+  `- High ZCR indicates fast speaking or presence of sharp consonants.\n`+
+  `- Volume spikes indicate emotional peaks or raising voice.`;
+}
+
+function avg(arr) { return arr.reduce((a,b)=>a+b,0)/arr.length; }
+</script>
+
+</body>
+</html>
