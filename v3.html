@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FULL Advanced Voice Analyzer – Stable Version</title>
+  <style>
+    body { background:#0d0d0d; color:#fff; font-family:Arial; padding:20px; margin:0; }
+    h1 { text-align:center; margin-bottom:30px; }
+    .controls { display:flex; flex-wrap:wrap; gap:15px; justify-content:center; margin-bottom:20px; }
+    .controls button, .controls input {
+      padding:10px 15px; border:none; border-radius:6px; cursor:pointer;
+      background:#1f1f1f; color:#fff; font-size:14px;
+    }
+    #charts { 
+      display:grid; 
+      grid-template-columns:repeat(auto-fit, minmax(350px, 1fr)); 
+      gap:20px; 
+      width:100%;
+      max-width:1500px;
+      margin:auto;
+    }
+    .chart-box { background:#111; border-radius:10px; padding:15px; }
+    canvas { width:100% !important; height:200px !important; }
+    #report { background:#111; padding:15px; border-radius:6px; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+
+<h1>🎧 FULL Advanced Voice Analyzer Dashboard</h1>
+
+<div class="controls">
+  <button id="recordBtn">🎤 Record Clip (5 seconds)</button>
+  <input type="file" id="upload" accept="audio/*" />
+  <button onclick="exportJSON()">📥 Export JSON</button>
+  <button onclick="exportCSV()">📄 Export CSV</button>
+</div>
+
+<h2>📊 Analysis Dashboard</h2>
+<div id="charts">
+  <div class="chart-box"><canvas id="volumeChart"></canvas></div>
+  <div class="chart-box"><canvas id="pitchChart"></canvas></div>
+  <div class="chart-box"><canvas id="speedChart"></canvas></div>
+  <div class="chart-box"><canvas id="centroidChart"></canvas></div>
+  <div class="chart-box"><canvas id="flatnessChart"></canvas></div>
+  <div class="chart-box"><canvas id="rolloffChart"></canvas></div>
+  <div class="chart-box"><canvas id="fluxChart"></canvas></div>
+  <div class="chart-box"><canvas id="mfccChart"></canvas></div>
+</div>
+
+<h2>📄 Detailed Report</h2>
+<pre id="report">Upload or record audio to generate a report...</pre>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let audioCtx;
+let reportEl = document.getElementById("report");
+let volumeData = [], pitchData = [], speedData = [];
+let centroidData = [], flatnessData = [], rolloffData = [], fluxData = [];
+let mfccData = [];
+
+// =================== RECORD ===================
+async function recordClip() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const recorder = new MediaRecorder(stream);
+  let chunks = [];
+
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = () => analyzeBlob(new Blob(chunks, { type: "audio/webm" }));
+  recorder.start();
+  setTimeout(() => recorder.stop(), 5000);
+}
+
+document.getElementById("recordBtn").onclick = recordClip;
+document.getElementById("upload").onchange = e => analyzeBlob(e.target.files[0]);
+
+// =================== ANALYZE ===================
+async function analyzeBlob(blob) {
+  resetCharts();
+  reportEl.textContent = "Analyzing audio...";
+
+  const arrayBuffer = await blob.arrayBuffer();
+  audioCtx = new AudioContext();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+  processAudio(audioBuffer);
+}
+
+// =================== PROCESS ===================
+function processAudio(buffer) {
+  const raw = buffer.getChannelData(0);
+  let chunkSize = 2048;
+
+  let prevSpectrum = null;
+
+  for (let i = 0; i < raw.length; i += chunkSize) {
+    let slice = raw.slice(i, i + chunkSize);
+
+    // VOLUME
+    let vol = Math.sqrt(slice.reduce((s, n) => s + n*n, 0) / slice.length);
+    volumeData.push(vol);
+
+    // PITCH
+    pitchData.push(detectPitch(slice, audioCtx.sampleRate) || 0);
+
+    // SPEED (ZCR)
+    speedData.push(calcZCR(slice));
+
+    // FFT
+    let fft = calcFFT(slice);
+
+    centroidData.push(spectralCentroid(fft));
+    flatnessData.push(spectralFlatness(fft));
+    rolloffData.push(spectralRolloff(fft));
+
+    if(prevSpectrum) fluxData.push(spectralFlux(prevSpectrum, fft));
+    prevSpectrum = fft;
+
+    mfccData.push(calcMFCC(fft));
+  }
+
+  updateCharts();
+  generateReport();
+}
+
+// =================== SIGNAL PROCESSING ===================
+function detectPitch(sig, sr) {
+  let bestLag = -1, bestCorr = 0;
+  for (let lag = 20; lag < 400; lag++) {
+    let c = 0;
+    for (let i = 0; i < sig.length - lag; i++) c += sig[i] * sig[i + lag];
+    if (c > bestCorr) { bestCorr = c; bestLag = lag; }
+  }
+  return bestLag > 0 ? sr / bestLag : 0;
+}
+
+function calcZCR(arr) {
+  let c = 0;
+  for (let i = 1; i < arr.length; i++)
+    if ((arr[i-1] > 0 && arr[i] < 0) || (arr[i-1] < 0 && arr[i] > 0)) c++;
+  return c;
+}
+
+function calcFFT(sig) {
+  let N = sig.length;
+  let out = new Array(N/2).fill(0);
+  for (let k = 0; k < N/2; k++) {
+    let real = 0, imag = 0;
+    for (let n = 0; n < N; n++) {
+      real += sig[n] * Math.cos((2*Math.PI*k*n)/N);
+      imag -= sig[n] * Math.sin((2*Math.PI*k*n)/N);
+    }
+    out[k] = Math.sqrt(real*real + imag*imag);
+  }
+  return out;
+}
+
+function spectralCentroid(fft) {
+  let sum = 0, total = 0;
+  for (let i = 0; i < fft.length; i++) {
+    sum += i * fft[i];
+    total += fft[i];
+  }
+  return total ? sum / total : 0;
+}
+
+function spectralFlatness(fft) {
+  let geo = 1, ar = 0;
+  for (let i = 0; i < fft.length; i++) {
+    geo *= fft[i] || 1e-12;
+    ar += fft[i];
+  }
+  geo = Math.pow(geo, 1/fft.length);
+  ar /= fft.length;
+  return geo / ar;
+}
+
+function spectralRolloff(fft) {
+  let total = fft.reduce((a,b)=>a+b,0);
+  let threshold = total * 0.85;
+  let sum = 0;
+  for (let i = 0; i < fft.length; i++) {
+    sum += fft[i];
+    if(sum >= threshold) return i;
+  }
+  return 0;
+}
+
+function spectralFlux(prev, curr) {
+  let flux = 0;
+  for (let i = 0; i < curr.length; i++) flux += Math.max(curr[i] - prev[i], 0);
+  return flux;
+}
+
+function calcMFCC(fft) {
+  return fft.slice(0, 13);
+}
+
+// =================== CHARTS ===================
+let charts = [];
+function resetCharts() {
+  charts.forEach(c => c.destroy());
+  charts = [];
+  volumeData = pitchData = speedData = centroidData = flatnessData = rolloffData = fluxData = mfccData = [];
+}
+
+function plot(id, data) {
+  let c = new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels:data.map((_,i)=>i), datasets:[{ data, borderWidth:1 }] },
+    options:{ responsive:true, maintainAspectRatio:false }
+  });
+  charts.push(c);
+}
+
+function updateCharts() {
+  plot("volumeChart", volumeData);
+  plot("pitchChart", pitchData);
+  plot("speedChart", speedData);
+  plot("centroidChart", centroidData);
+  plot("flatnessChart", flatnessData);
+  plot("rolloffChart", rolloffData);
+  plot("fluxChart", fluxData);
+  plot("mfccChart", mfccData.map(x=>x[0]));
+}
+
+// =================== REPORT ===================
+function generateReport() {
+  reportEl.textContent = `VOICE REPORT
+
+`+
+  `• Avg Volume: ${avg(volumeData).toFixed(4)}
+`+
+  `• Avg Pitch: ${avg(pitchData).toFixed(2)} Hz
+`+
+  `• Avg Speaking Speed: ${avg(speedData).toFixed(2)} ZCR
+`+
+  `• Avg Spectral Centroid: ${avg(centroidData).toFixed(2)}
+`+
+  `• Avg Flatness: ${avg(flatnessData).toFixed(4)}
+`+
+  `• Avg Rolloff: ${avg(rolloffData).toFixed(2)}
+`+
+  `• Avg Flux: ${avg(fluxData).toFixed(4)}
+`+
+  `• MFCC Sample: ${JSON.stringify(mfccData[1] || [])}`;
+}
+
+function avg(arr) { return arr.reduce((a,b)=>a+b,0) / arr.length; }
+
+// =================== EXPORT ===================
+function exportJSON() {
+  const data = {
+    volume: volumeData,
+    pitch: pitchData,
+    speed: speedData,
+    centroid: centroidData,
+    flatness: flatnessData,
+    rolloff: rolloffData,
+    flux: fluxData,
+    mfcc: mfccData
+  };
+  downloadFile("analysis.json", JSON.stringify(data, null, 2));
+}
+
+function exportCSV() {
+  let csv = "frame,volume,pitch,speed,centroid,flatness,rolloff,flux";
+  for(let i=0;i<volumeData.length;i++){
+    csv += `${i},${volumeData[i]},${pitchData[i]},${speedData[i]},${centroidData[i]},${flatnessData[i]},${rolloffData[i]},${fluxData[i]}
+`;
+  }
+  downloadFile("analysis.csv", csv);
+}
+
+function downloadFile(name, data) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data]));
+  a.download = name;
+  a.click();
+}
+</script>
+
+</body>
+</html>
