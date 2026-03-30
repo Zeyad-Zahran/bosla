@@ -1,0 +1,1002 @@
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>محلل الصوت | VoiceIQ v1.0</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #050a12;
+      --surface:  #0b1220;
+      --card:     #0f1a2e;
+      --border:   #1a2d4a;
+      --accent:   #00d4ff;
+      --accent2:  #7b2fff;
+      --gold:     #f0c040;
+      --danger:   #ff4466;
+      --success:  #00e5a0;
+      --text:     #e8f0ff;
+      --muted:    #5a7090;
+      --glow:     0 0 24px rgba(0,212,255,0.25);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Cairo', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Background grid ─── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        linear-gradient(rgba(0,212,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Glow blob ─── */
+    body::after {
+      content: '';
+      position: fixed;
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(123,47,255,.12) 0%, transparent 70%);
+      top: -200px; left: 50%; transform: translateX(-50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Header ─── */
+    header {
+      position: relative; z-index: 10;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(5,10,18,.8);
+      backdrop-filter: blur(16px);
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+
+    .logo-text { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; }
+    .logo-text span { color: var(--accent); }
+
+    .version-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      background: rgba(0,212,255,.1);
+      border: 1px solid rgba(0,212,255,.3);
+      color: var(--accent);
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    /* ─── Main layout ─── */
+    main {
+      position: relative; z-index: 10;
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .full-width { grid-column: 1 / -1; }
+
+    /* ─── Cards ─── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      transition: border-color .3s;
+    }
+    .card:hover { border-color: rgba(0,212,255,.3); }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 20px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-title::before {
+      content: '';
+      width: 3px; height: 14px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    /* ─── Record button ─── */
+    .record-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 0;
+    }
+
+    #recordBtn {
+      width: 100px; height: 100px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      box-shadow: 0 0 30px rgba(0,212,255,.3);
+      font-size: 36px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .2s, box-shadow .2s;
+      position: relative;
+      overflow: visible;
+    }
+
+    #recordBtn:hover { transform: scale(1.06); box-shadow: 0 0 50px rgba(0,212,255,.5); }
+
+    #recordBtn.recording {
+      background: linear-gradient(135deg, var(--danger), #ff8800);
+      box-shadow: 0 0 40px rgba(255,68,102,.5);
+      animation: pulse-ring 1.4s ease-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(255,68,102,.6); }
+      70%  { box-shadow: 0 0 0 30px rgba(255,68,102,0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,68,102,0); }
+    }
+
+    #statusLabel {
+      font-size: 14px; font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    #statusLabel.active { color: var(--danger); }
+
+    /* ─── Waveform canvas ─── */
+    #waveCanvas {
+      width: 100%; height: 80px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    /* ─── Stats grid ─── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .stat-value {
+      font-family: 'Space Mono', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-value.gold  { color: var(--gold); }
+    .stat-value.green { color: var(--success); }
+    .stat-value.red   { color: var(--danger); }
+
+    /* ─── Frequency bars ─── */
+    #freqCanvas {
+      width: 100%; height: 120px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    /* ─── Transcript table ─── */
+    .transcript-box {
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .transcript-box::-webkit-scrollbar { width: 4px; }
+    .transcript-box::-webkit-scrollbar-track { background: var(--surface); }
+    .transcript-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    thead th {
+      position: sticky; top: 0;
+      background: var(--card);
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 10px 12px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(26,45,74,.5);
+      transition: background .2s;
+    }
+    tbody tr:hover { background: rgba(0,212,255,.04); }
+
+    tbody td {
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+
+    .td-index {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      width: 40px;
+    }
+
+    .td-time {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--accent);
+      white-space: nowrap;
+      width: 70px;
+    }
+
+    .td-text { line-height: 1.6; }
+
+    .td-conf {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      white-space: nowrap;
+      width: 60px;
+    }
+
+    .conf-high  { color: var(--success); }
+    .conf-mid   { color: var(--gold); }
+    .conf-low   { color: var(--danger); }
+
+    .td-words {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      width: 50px;
+    }
+
+    /* ─── Audio metrics ─── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .metric-icon { font-size: 24px; margin-bottom: 6px; }
+    .metric-label { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+    .metric-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* ─── Progress bar ─── */
+    .prog-wrap { margin-top: 8px; }
+    .prog-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .prog-label span:first-child { color: var(--muted); }
+    .prog-bar { height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+    .prog-fill.blue   { background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+    .prog-fill.green  { background: var(--success); }
+    .prog-fill.gold   { background: var(--gold); }
+
+    /* ─── Controls row ─── */
+    .controls {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .btn {
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: 'Cairo', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn.primary { background: linear-gradient(135deg,var(--accent2),var(--accent)); border-color: transparent; }
+    .btn.primary:hover { opacity: .85; }
+
+    /* ─── Empty state ─── */
+    .empty-state {
+      text-align: center;
+      padding: 40px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .empty-state .icon { font-size: 40px; margin-bottom: 10px; }
+
+    /* ─── Noise indicator ─── */
+    .noise-ring {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--muted);
+      display: inline-block;
+      transition: background .3s;
+    }
+    .noise-ring.low  { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .noise-ring.mid  { background: var(--gold);    box-shadow: 0 0 6px var(--gold); }
+    .noise-ring.high { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+
+    /* ─── Speech lang note ─── */
+    .lang-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(123,47,255,.15);
+      border: 1px solid rgba(123,47,255,.3);
+      color: #b590ff;
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    /* ─── Footer note ─── */
+    .footer-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 30px 0;
+      position: relative; z-index: 10;
+    }
+
+    /* ─── Scrollbar for main ─── */
+    html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  </style>
+</head>
+<body>
+
+<!-- ════ HEADER ════ -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🎙️</div>
+    <div class="logo-text">Voice<span>IQ</span></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="lang-tag">🌐 Arabic (ar-EG)</span>
+    <span class="version-badge">v1.0 — Audio Engine</span>
+  </div>
+</header>
+
+<!-- ════ MAIN ════ -->
+<main>
+
+  <!-- ── Recording control ── -->
+  <div class="card">
+    <div class="card-title">🎙 وحدة التسجيل</div>
+    <div class="record-center">
+      <button id="recordBtn" title="ابدأ / أوقف التسجيل">🎤</button>
+      <div id="statusLabel">اضغط للتسجيل</div>
+    </div>
+    <canvas id="waveCanvas"></canvas>
+    <div class="controls" style="margin-top:14px;">
+      <button class="btn" id="playBtn" disabled>▶ تشغيل</button>
+      <button class="btn" id="downloadBtn" disabled>⬇ تنزيل</button>
+      <button class="btn" id="clearBtn">🗑 مسح الكل</button>
+    </div>
+  </div>
+
+  <!-- ── Audio stats ── -->
+  <div class="card">
+    <div class="card-title">📊 إحصائيات الصوت الآنية</div>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">مستوى الصوت (dB)</div>
+        <div class="stat-value" id="dbVal">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">التردد الأساسي (Hz)</div>
+        <div class="stat-value gold" id="freqVal">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">مدة التسجيل</div>
+        <div class="stat-value green" id="durVal">00:00</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">الضوضاء الخلفية</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <span class="noise-ring" id="noiseRing"></span>
+          <span class="stat-value" id="noiseVal" style="font-size:16px;">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Volume bar -->
+    <div class="prog-wrap" style="margin-top:16px;">
+      <div class="prog-label"><span>مستوى الصوت</span><span id="volPct">0%</span></div>
+      <div class="prog-bar"><div class="prog-fill blue" id="volBar" style="width:0%"></div></div>
+    </div>
+    <div class="prog-wrap">
+      <div class="prog-label"><span>الطاقة الصوتية</span><span id="energyPct">0%</span></div>
+      <div class="prog-bar"><div class="prog-fill green" id="energyBar" style="width:0%"></div></div>
+    </div>
+    <div class="prog-wrap">
+      <div class="prog-label"><span>التحدث/الصمت</span><span id="speechPct">0%</span></div>
+      <div class="prog-bar"><div class="prog-fill gold" id="speechBar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- ── Frequency spectrum ── -->
+  <div class="card full-width">
+    <div class="card-title">📈 الطيف الترددي — Web Audio API</div>
+    <canvas id="freqCanvas"></canvas>
+    <div class="metrics-grid" style="margin-top:16px;">
+      <div class="metric-card">
+        <div class="metric-icon">🔊</div>
+        <div class="metric-label">تردد منخفض</div>
+        <div class="metric-val" id="bassVal">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">🎵</div>
+        <div class="metric-label">تردد متوسط</div>
+        <div class="metric-val" id="midVal">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">✨</div>
+        <div class="metric-label">تردد عالي</div>
+        <div class="metric-val" id="trebVal">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Transcript table ── -->
+  <div class="card full-width">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>📝 نص الكلام — Web Speech API</span>
+      <button class="btn" id="exportCsvBtn" style="margin:0;" disabled>⬇ تصدير CSV</button>
+    </div>
+    <div class="transcript-box" id="transcriptBox">
+      <div class="empty-state">
+        <div class="icon">🗣️</div>
+        <div>سجّل صوتك وسيظهر الكلام هنا</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Summary stats ── -->
+  <div class="card full-width">
+    <div class="card-title">📋 ملخص الجلسة</div>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon">💬</div>
+        <div class="metric-label">إجمالي الجمل</div>
+        <div class="metric-val" id="totalSentences">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">🔤</div>
+        <div class="metric-label">إجمالي الكلمات</div>
+        <div class="metric-val" id="totalWords">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">⚡</div>
+        <div class="metric-label">معدل الكلام (كلمة/دقيقة)</div>
+        <div class="metric-val" id="wpm">0</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="footer-note">VoiceIQ v1.0 — Web Audio API + Web Speech API — إصدار التحليل الصوتي</div>
+
+<!-- ════ JAVASCRIPT ════ -->
+<script>
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let audioCtx, analyser, source, mediaStream;
+let isRecording = false;
+let mediaRecorder, recordedChunks = [];
+let recordedBlob = null;
+let animId;
+let startTime = null, durTimer = null;
+let speechTotal = 0, speechActive = 0;
+
+// Transcript data
+let transcriptRows = [];
+let rowIndex = 0;
+let sessionStartTime = null;
+
+// ─────────────────────────────────────────────
+//  DOM
+// ─────────────────────────────────────────────
+const recordBtn    = document.getElementById('recordBtn');
+const statusLabel  = document.getElementById('statusLabel');
+const waveCanvas   = document.getElementById('waveCanvas');
+const freqCanvas   = document.getElementById('freqCanvas');
+const wCtx         = waveCanvas.getContext('2d');
+const fCtx         = freqCanvas.getContext('2d');
+const dbVal        = document.getElementById('dbVal');
+const freqVal      = document.getElementById('freqVal');
+const durVal       = document.getElementById('durVal');
+const noiseRing    = document.getElementById('noiseRing');
+const noiseVal     = document.getElementById('noiseVal');
+const volBar       = document.getElementById('volBar');
+const volPct       = document.getElementById('volPct');
+const energyBar    = document.getElementById('energyBar');
+const energyPct    = document.getElementById('energyPct');
+const speechBar    = document.getElementById('speechBar');
+const speechPct    = document.getElementById('speechPct');
+const bassVal      = document.getElementById('bassVal');
+const midVal       = document.getElementById('midVal');
+const trebVal      = document.getElementById('trebVal');
+const transcriptBox= document.getElementById('transcriptBox');
+const playBtn      = document.getElementById('playBtn');
+const downloadBtn  = document.getElementById('downloadBtn');
+const clearBtn     = document.getElementById('clearBtn');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
+const totalSentences = document.getElementById('totalSentences');
+const totalWords   = document.getElementById('totalWords');
+const wpmEl        = document.getElementById('wpm');
+
+// ─────────────────────────────────────────────
+//  RESIZE CANVASES
+// ─────────────────────────────────────────────
+function resizeCanvases() {
+  waveCanvas.width = waveCanvas.offsetWidth * devicePixelRatio;
+  waveCanvas.height = waveCanvas.offsetHeight * devicePixelRatio;
+  wCtx.scale(devicePixelRatio, devicePixelRatio);
+
+  freqCanvas.width = freqCanvas.offsetWidth * devicePixelRatio;
+  freqCanvas.height = freqCanvas.offsetHeight * devicePixelRatio;
+  fCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+window.addEventListener('resize', resizeCanvases);
+setTimeout(resizeCanvases, 100);
+
+// ─────────────────────────────────────────────
+//  WEB AUDIO API SETUP
+// ─────────────────────────────────────────────
+async function startAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.82;
+
+  source = audioCtx.createMediaStreamSource(mediaStream);
+  source.connect(analyser);
+
+  // MediaRecorder
+  mediaRecorder = new MediaRecorder(mediaStream);
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+    playBtn.disabled = false;
+    downloadBtn.disabled = false;
+  };
+  mediaRecorder.start();
+
+  draw();
+}
+
+function stopAudio() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (source) source.disconnect();
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  if (animId) cancelAnimationFrame(animId);
+  audioCtx && audioCtx.close();
+}
+
+// ─────────────────────────────────────────────
+//  DRAW LOOP
+// ─────────────────────────────────────────────
+function draw() {
+  animId = requestAnimationFrame(draw);
+
+  const bufLen = analyser.frequencyBinCount;
+  const timeData = new Uint8Array(bufLen);
+  const freqData = new Uint8Array(bufLen);
+  analyser.getByteTimeDomainData(timeData);
+  analyser.getByteFrequencyData(freqData);
+
+  drawWave(timeData);
+  drawFreq(freqData);
+  updateStats(timeData, freqData);
+}
+
+function drawWave(data) {
+  const W = waveCanvas.offsetWidth;
+  const H = waveCanvas.offsetHeight;
+  wCtx.clearRect(0, 0, W, H);
+
+  // bg
+  wCtx.fillStyle = '#0b1220';
+  wCtx.fillRect(0, 0, W, H);
+
+  wCtx.lineWidth = 2;
+  const grad = wCtx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#7b2fff');
+  grad.addColorStop(1, '#00d4ff');
+  wCtx.strokeStyle = grad;
+  wCtx.shadowBlur = 8;
+  wCtx.shadowColor = '#00d4ff';
+
+  wCtx.beginPath();
+  const sliceW = W / data.length;
+  let x = 0;
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i] / 128.0;
+    const y = (v * H) / 2;
+    i === 0 ? wCtx.moveTo(x, y) : wCtx.lineTo(x, y);
+    x += sliceW;
+  }
+  wCtx.lineTo(W, H / 2);
+  wCtx.stroke();
+  wCtx.shadowBlur = 0;
+}
+
+function drawFreq(data) {
+  const W = freqCanvas.offsetWidth;
+  const H = freqCanvas.offsetHeight;
+  fCtx.clearRect(0, 0, W, H);
+
+  fCtx.fillStyle = '#0b1220';
+  fCtx.fillRect(0, 0, W, H);
+
+  const barW = (W / data.length) * 2.5;
+  let x = 0;
+  for (let i = 0; i < data.length; i++) {
+    const bh = (data[i] / 255) * H;
+    const ratio = i / data.length;
+    const r = Math.round(123 + (0 - 123) * ratio);
+    const g = Math.round(47  + (212 - 47) * ratio);
+    const b = Math.round(255 + (255 - 255) * ratio);
+    fCtx.fillStyle = `rgba(${r},${g},${b},0.85)`;
+    fCtx.fillRect(x, H - bh, barW - 1, bh);
+    x += barW;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  STATS UPDATE
+// ─────────────────────────────────────────────
+let noiseFloor = null;
+let noiseFrames = 0;
+
+function updateStats(timeData, freqData) {
+  // RMS volume → dB
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) {
+    const s = (timeData[i] - 128) / 128;
+    sum += s * s;
+  }
+  const rms = Math.sqrt(sum / timeData.length);
+  const db  = rms > 0 ? Math.round(20 * Math.log10(rms)) : -Infinity;
+  const dbDisplay = isFinite(db) ? db + ' dB' : '—';
+  dbVal.textContent = dbDisplay;
+
+  // Volume bar (0–100%)
+  const volP = Math.min(100, Math.round((rms / 0.5) * 100));
+  volBar.style.width  = volP + '%';
+  volPct.textContent  = volP + '%';
+
+  // Energy bar
+  const energy = freqData.reduce((a, b) => a + b, 0) / (freqData.length * 255);
+  const energP = Math.round(energy * 100);
+  energyBar.style.width = energP + '%';
+  energyPct.textContent = energP + '%';
+
+  // Dominant frequency (basic pitch detection)
+  let maxAmp = 0, maxIdx = 0;
+  for (let i = 2; i < freqData.length / 2; i++) {
+    if (freqData[i] > maxAmp) { maxAmp = freqData[i]; maxIdx = i; }
+  }
+  const nyquist = audioCtx.sampleRate / 2;
+  const hz = Math.round((maxIdx / freqData.length) * nyquist * 2);
+  freqVal.textContent = maxAmp > 20 ? hz + ' Hz' : '—';
+
+  // Band analysis
+  const bassRange  = freqData.slice(0,  Math.floor(freqData.length * 0.05));
+  const midRange   = freqData.slice(Math.floor(freqData.length * 0.05), Math.floor(freqData.length * 0.3));
+  const trebRange  = freqData.slice(Math.floor(freqData.length * 0.3), Math.floor(freqData.length * 0.7));
+
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  bassVal.textContent = Math.round(avg(bassRange));
+  midVal.textContent  = Math.round(avg(midRange));
+  trebVal.textContent = Math.round(avg(trebRange));
+
+  // Noise floor calibration (first 30 frames)
+  if (noiseFrames < 30) {
+    noiseFloor = noiseFloor === null ? rms : (noiseFloor * 0.9 + rms * 0.1);
+    noiseFrames++;
+  }
+
+  // Noise level indicator
+  const snr = noiseFloor > 0 ? rms / noiseFloor : 0;
+  if (rms < 0.01) {
+    noiseRing.className = 'noise-ring';
+    noiseVal.textContent = '—';
+  } else if (snr < 1.5) {
+    noiseRing.className = 'noise-ring high';
+    noiseVal.textContent = 'عالية';
+  } else if (snr < 3) {
+    noiseRing.className = 'noise-ring mid';
+    noiseVal.textContent = 'متوسطة';
+  } else {
+    noiseRing.className = 'noise-ring low';
+    noiseVal.textContent = 'منخفضة';
+  }
+
+  // Speech activity
+  speechTotal++;
+  if (rms > 0.03) speechActive++;
+  const spP = Math.round((speechActive / Math.max(1, speechTotal)) * 100);
+  speechBar.style.width = spP + '%';
+  speechPct.textContent = spP + '%';
+}
+
+// ─────────────────────────────────────────────
+//  DURATION TIMER
+// ─────────────────────────────────────────────
+function startTimer() {
+  startTime = Date.now();
+  sessionStartTime = startTime;
+  durTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(s / 60);
+    durVal.textContent = String(m).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+  }, 500);
+}
+function stopTimer() { clearInterval(durTimer); }
+
+// ─────────────────────────────────────────────
+//  WEB SPEECH API
+// ─────────────────────────────────────────────
+let recognition = null;
+
+function setupSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { console.warn('SpeechRecognition not supported'); return; }
+
+  recognition = new SR();
+  recognition.lang = 'ar-EG';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = true;
+
+  recognition.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i];
+      if (res.isFinal) {
+        const text  = res[0].transcript.trim();
+        const conf  = res[0].confidence;
+        const words = text.split(/\s+/).filter(Boolean).length;
+        const elapsed = sessionStartTime
+          ? Math.floor((Date.now() - sessionStartTime) / 1000)
+          : 0;
+        const timeStr = formatTime(elapsed);
+
+        rowIndex++;
+        transcriptRows.push({ index: rowIndex, time: timeStr, text, conf, words });
+        renderTable();
+        updateSummary(elapsed);
+      }
+    }
+  };
+
+  recognition.onerror = e => console.error('Speech error:', e.error);
+  recognition.onend   = () => { if (isRecording) recognition.start(); };
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+
+// ─────────────────────────────────────────────
+//  TABLE RENDER
+// ─────────────────────────────────────────────
+function renderTable() {
+  if (transcriptRows.length === 0) {
+    transcriptBox.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🗣️</div>
+        <div>سجّل صوتك وسيظهر الكلام هنا</div>
+      </div>`;
+    exportCsvBtn.disabled = true;
+    return;
+  }
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>الوقت</th>
+          <th>النص</th>
+          <th>الدقة</th>
+          <th>كلمات</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  for (const r of [...transcriptRows].reverse()) {
+    const confClass = r.conf >= 0.8 ? 'conf-high' : r.conf >= 0.5 ? 'conf-mid' : 'conf-low';
+    const confTxt   = r.conf > 0 ? (r.conf * 100).toFixed(0) + '%' : '—';
+    html += `
+      <tr>
+        <td class="td-index">${r.index}</td>
+        <td class="td-time">${r.time}</td>
+        <td class="td-text">${r.text}</td>
+        <td class="td-conf ${confClass}">${confTxt}</td>
+        <td class="td-words">${r.words}</td>
+      </tr>`;
+  }
+
+  html += '</tbody></table>';
+  transcriptBox.innerHTML = html;
+  exportCsvBtn.disabled = false;
+}
+
+// ─────────────────────────────────────────────
+//  SUMMARY UPDATE
+// ─────────────────────────────────────────────
+function updateSummary(elapsed) {
+  const sentences = transcriptRows.length;
+  const words = transcriptRows.reduce((a, r) => a + r.words, 0);
+  const minutes = elapsed / 60;
+  const wpm = minutes > 0 ? Math.round(words / minutes) : 0;
+
+  totalSentences.textContent = sentences;
+  totalWords.textContent = words;
+  wpmEl.textContent = wpm;
+}
+
+// ─────────────────────────────────────────────
+//  RECORD BUTTON
+// ─────────────────────────────────────────────
+recordBtn.addEventListener('click', async () => {
+  if (!isRecording) {
+    // START
+    try {
+      await startAudio();
+      setupSpeech();
+      if (recognition) recognition.start();
+      isRecording = true;
+      recordBtn.classList.add('recording');
+      recordBtn.textContent = '⏹';
+      statusLabel.textContent = 'جارٍ التسجيل...';
+      statusLabel.className = 'active';
+      startTimer();
+      speechTotal = 0; speechActive = 0;
+    } catch(err) {
+      alert('لم يتم الإذن بالميكروفون: ' + err.message);
+    }
+  } else {
+    // STOP
+    isRecording = false;
+    if (recognition) recognition.stop();
+    stopAudio();
+    stopTimer();
+    recordBtn.classList.remove('recording');
+    recordBtn.textContent = '🎤';
+    statusLabel.textContent = 'انتهى التسجيل';
+    statusLabel.className = '';
+  }
+});
+
+// ─────────────────────────────────────────────
+//  PLAY BACK
+// ─────────────────────────────────────────────
+playBtn.addEventListener('click', () => {
+  if (!recordedBlob) return;
+  const url = URL.createObjectURL(recordedBlob);
+  const audio = new Audio(url);
+  audio.play();
+});
+
+// ─────────────────────────────────────────────
+//  DOWNLOAD
+// ─────────────────────────────────────────────
+downloadBtn.addEventListener('click', () => {
+  if (!recordedBlob) return;
+  const url = URL.createObjectURL(recordedBlob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'voiceiq-recording.webm'; a.click();
+});
+
+// ─────────────────────────────────────────────
+//  CLEAR
+// ─────────────────────────────────────────────
+clearBtn.addEventListener('click', () => {
+  transcriptRows = []; rowIndex = 0;
+  recordedBlob = null;
+  playBtn.disabled = true; downloadBtn.disabled = true;
+  durVal.textContent = '00:00';
+  dbVal.textContent = freqVal.textContent = noiseVal.textContent = '—';
+  volBar.style.width = energyBar.style.width = speechBar.style.width = '0%';
+  volPct.textContent = energyPct.textContent = speechPct.textContent = '0%';
+  bassVal.textContent = midVal.textContent = trebVal.textContent = '—';
+  noiseRing.className = 'noise-ring';
+  renderTable();
+  totalSentences.textContent = totalWords.textContent = wpmEl.textContent = '0';
+
+  // Clear canvases
+  const W1 = waveCanvas.offsetWidth, H1 = waveCanvas.offsetHeight;
+  wCtx.fillStyle = '#0b1220'; wCtx.fillRect(0, 0, W1, H1);
+  const W2 = freqCanvas.offsetWidth, H2 = freqCanvas.offsetHeight;
+  fCtx.fillStyle = '#0b1220'; fCtx.fillRect(0, 0, W2, H2);
+});
+
+// ─────────────────────────────────────────────
+//  EXPORT CSV
+// ─────────────────────────────────────────────
+exportCsvBtn.addEventListener('click', () => {
+  if (transcriptRows.length === 0) return;
+  const bom = '\uFEFF'; // UTF-8 BOM for Arabic
+  const header = '#,الوقت,النص,الدقة,الكلمات\n';
+  const rows = transcriptRows.map(r =>
+    `${r.index},${r.time},"${r.text.replace(/"/g,'""')}",${r.conf > 0 ? (r.conf*100).toFixed(0)+'%' : '—'},${r.words}`
+  ).join('\n');
+  const csv = bom + header + rows;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'voiceiq-transcript.csv'; a.click();
+});
+</script>
+</body>
+</html>
